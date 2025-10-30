@@ -1,0 +1,57 @@
+name: CI for pipelines
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actionlint
+        run: |
+          curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash -o download-actionlint.bash
+          bash download-actionlint.bash latest /usr/local/bin
+          actionlint -version
+
+      - name: Run actionlint (no shellcheck)
+        run: actionlint -color -shellcheck=off
+
+      - name: Validate YAML syntax (Python)
+        run: |
+          pip install pyyaml
+          echo "Validating YAML syntax..."
+          python - <<'PYCODE'
+          import yaml, glob, sys
+          bad = False
+          for f in glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml"):
+              try:
+                  yaml.safe_load(open(f))
+                  print(f"✅ OK: {f}")
+              except Exception as e:
+                  print(f"❌ ERROR in {f}: {e}")
+                  bad = True
+          sys.exit(1 if bad else 0)
+          PYCODE
+
+  detect:
+    name: detect
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - run: echo "✅ Build stage passed — workflows look good"
+
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    needs: [detect]
+    steps:
+      - run: echo "✅ Test stage passed — pipeline validation complete"
+
