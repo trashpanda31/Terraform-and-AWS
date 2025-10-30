@@ -1,0 +1,131 @@
+name: Terraform CI
+
+on:
+  pull_request:
+    paths:
+      - 'labs/**/8.tf'
+
+jobs:
+  detect:
+    name: detect
+    runs-on: ubuntu-latest
+    outputs:
+      labs: ${{ steps.collect.outputs.labs }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - id: collect
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          # только изменённые .tf внутри labs/<lab>/...
+          files=$(git diff --name-only "$BASE" "$HEAD" | grep -E '^labs/[^/]+/.+\.tf$' || true)
+          if [ -z "$files" ]; then
+            echo "labs=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          labs=$(echo "$files" | cut -d'/' -f2 | sort -u | jq -R -s -c 'split("\n")[:-1]')
+          echo "labs=$labs" >> "$GITHUB_OUTPUT"
+
+  lint:
+    name: lint (${{ matrix.lab }})
+    needs: detect
+    if: ${{ needs.detect.outputs.labs != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lab: ${{ fromJson(needs.detect.outputs.labs) }}
+    concurrency:
+      group: tf-ci-pr${{ github.event.pull_request.number }}-${{ matrix.lab }}
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: labs/${{ matrix.lab }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: terraform fmt (check)
+        run: terraform fmt -check -recursive
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: tflint --init
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: tflint
+        run: tflint -f compact .
+
+      - name: terraform init (no backend)
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform validate
+
+  plan:
+    name: plan
+    needs: [detect, lint]
+    if: ${{ needs.detect.outputs.labs != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lab: ${{ fromJson(needs.detect.outputs.labs) }}
+    concurrency:
+      group: tf-ci-pr${{ github.event.pull_request.number }}-${{ matrix.lab }}
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: labs/${{ matrix.lab }}
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform plan
+        run: terraform plan -no-color -out=tfplan
+
+      - name: Save plan text
+        run: terraform show -no-color tfplan > plan.txt
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.lab }}
+          path: labs/${{ matrix.lab }}/tfplan
+
+      - name: Comment plan to PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: tf-plan-${{ matrix.lab }}
+          path: plan.txt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
