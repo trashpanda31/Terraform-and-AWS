@@ -13,15 +13,14 @@ jobs:
       labs: ${{ steps.collect.outputs.labs }}
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-
+        with:
+          fetch-depth: 0
       - id: collect
         shell: bash
         run: |
           set -euo pipefail
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          # только изменённые .tf внутри labs/<lab>/...
           files=$(git diff --name-only "$BASE" "$HEAD" | grep -E '^labs/[^/]+/.+\.tf$' || true)
           if [ -z "$files" ]; then
             echo "labs=[]" >> "$GITHUB_OUTPUT"
@@ -126,6 +125,6 @@ jobs:
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: tf-plan-${{ matrix.lab }}
-          path: plan.txt
+          path: labs/${{ matrix.lab }}/plan.txt
         env:
           GITHUB_TOKEN: ${{ github.token }}
