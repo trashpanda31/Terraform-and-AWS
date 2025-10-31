@@ -3,7 +3,7 @@ name: Terraform CI
 on:
   pull_request:
     paths:
-      - 'labs/**/8.tf'
+      - 'labs/**/*.tf'
 
 jobs:
   detect:
