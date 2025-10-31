@@ -31,7 +31,7 @@ jobs:
           echo "labs=$labs" >> "$GITHUB_OUTPUT"
 
   lint:
-    name: lint (${{ matrix.lab }})
+    name: lint
     needs: detect
     if: ${{ needs.detect.outputs.labs != '[]' }}
     runs-on: ubuntu-latest
@@ -67,7 +67,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: tflint
-        run: tflint -f compact .
+        run: tflint --format compact
 
       - name: terraform init (no backend)
         run: terraform init -backend=false -input=false
