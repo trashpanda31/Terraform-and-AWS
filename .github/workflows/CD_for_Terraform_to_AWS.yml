@@ -109,16 +109,16 @@ jobs:
       - name: Check backend variables
         shell: bash
         run: |
-          test -n "${{ vars.TF_STATE_BUCKET }}" || (echo "TF_STATE_BUCKET is empty" && exit 1)
-          test -n "${{ vars.TF_LOCK_TABLE }}"  || (echo "TF_LOCK_TABLE is empty" && exit 1)
+          test -n "${{ secrets.TF_STATE_BUCKET }}" || (echo "TF_STATE_BUCKET is empty" && exit 1)
+          test -n "${{ secrets.TF_LOCK_TABLE }}"  || (echo "TF_LOCK_TABLE is empty" && exit 1)
 
       - name: terraform init (with S3 backend)
         run: |
           terraform init -input=false \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -backend-config="key=labs/${{ matrix.lab }}/terraform.tfstate" \
             -backend-config="region=${{ secrets.AWS_REGION }}" \
-            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
+            -backend-config="dynamodb_table=${{ secrets.TF_LOCK_TABLE }}" \
             -backend-config="encrypt=true"
 
       - name: terraform apply
