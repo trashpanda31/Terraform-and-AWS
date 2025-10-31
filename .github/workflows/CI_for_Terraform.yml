@@ -101,13 +101,12 @@ jobs:
         shell: bash
         env:
           LABS_JSON: ${{ needs.detect.outputs.labs }}
-          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-          TF_LOCK_TABLE:  ${{ vars.TF_LOCK_TABLE }}
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_LOCK_TABLE:  ${{ secrets.TF_LOCK_TABLE }}
         run: |
           set -euo pipefail
           labs=$(jq -r '.[]' <<<"$LABS_JSON")
 
-          # собираем общий файл с планами для PR-коммента
           echo "# Terraform plan" > plans.md
 
           for lab in $labs; do
