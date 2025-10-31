@@ -67,7 +67,7 @@ jobs:
         run: tflint --init
 
       - name: tflint
-        run: tflint -f compact .
+        run: tflint --format compact
 
       - name: terraform init (no backend)
         run: terraform init -backend=false -input=false
