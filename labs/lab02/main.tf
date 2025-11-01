@@ -203,7 +203,7 @@ resource "aws_instance" "web" {
   vpc_security_group_ids = [aws_security_group.web.id]
   key_name               = aws_key_pair.generated.key_name
 
-  user_data = file("${path.module}/user_data.sh")
+  user_data                   = file("${path.module}/user_data.sh")
   user_data_replace_on_change = true
 
   tags = {
@@ -219,3 +219,4 @@ resource "aws_eip" "web" {
     Name = "${var.project}-eip"
   }
 }
+
