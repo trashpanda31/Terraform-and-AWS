@@ -1,0 +1,38 @@
+#!/bin/bash
+echo "${userdata_rev}" > /etc/userdata_rev
+set -euxo pipefail
+
+yum update -y
+amazon-linux-extras install docker -y || yum install -y docker
+systemctl enable docker
+systemctl start docker
+usermod -aG docker ec2-user || true
+
+mkdir -p /opt/frontend
+cat >/opt/frontend/nginx.conf <<'EOF'
+server {
+  listen 80;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  location / {
+    try_files $uri /index.html;
+  }
+
+  location /api/ {
+    proxy_pass http://${backend_private_ip}:${backend_port};
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+  }
+}
+EOF
+
+docker rm -f frontend || true
+docker pull ${front_image}
+docker run -d --name frontend \
+  --restart unless-stopped \
+  -p ${frontend_port}:80 \
+  -v /opt/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro \
+  ${front_image}
