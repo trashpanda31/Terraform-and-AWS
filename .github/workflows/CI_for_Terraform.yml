@@ -1,0 +1,143 @@
+name: Terraform C1
+
+on:
+  pull_request:
+    paths:
+      - 'labs/**'
+
+jobs:
+  detect:
+    name: detect
+    runs-on: ubuntu-latest
+    outputs:
+      labs: ${{ steps.collect.outputs.labs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: collect
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          files=$(git diff --name-only "$BASE" "$HEAD" | grep -E '^labs/[^/]+/.+\.tf$' || true)
+          if [ -z "$files" ]; then
+            echo "labs=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          labs=$(echo "$files" | cut -d'/' -f2 | sort -u | jq -R -s -c 'split("\n")[:-1]')
+          echo "labs=$labs" >> "$GITHUB_OUTPUT"
+          echo "Changed labs: $labs"
+
+  lint:
+    name: lint
+    needs: detect
+    if: ${{ needs.detect.outputs.labs != '[]' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: tf-ci-pr${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.49.0
+      - name: tflint --init
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Lint all changed labs
+        shell: bash
+        env:
+          LABS_JSON: ${{ needs.detect.outputs.labs }}
+        run: |
+          set -euo pipefail
+          labs=$(jq -r '.[]' <<<"$LABS_JSON")
+          fail=0
+          for lab in $labs; do
+            echo "::group::Lint $lab"
+            terraform -chdir="labs/$lab" fmt -check -recursive || fail=1
+            tflint --format compact --chdir "labs/$lab" || fail=1
+            terraform -chdir="labs/$lab" init -backend=false -input=false >/dev/null
+            terraform -chdir="labs/$lab" validate || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
+
+  plan:
+    name: plan
+    needs: [detect, lint]
+    if: ${{ needs.detect.outputs.labs != '[]' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: tf-ci-pr${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Plan all changed labs
+        id: do_plan
+        shell: bash
+        env:
+          LABS_JSON: ${{ needs.detect.outputs.labs }}
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_LOCK_TABLE:  ${{ secrets.TF_LOCK_TABLE }}
+        run: |
+          set -euo pipefail
+          labs=$(jq -r '.[]' <<<"$LABS_JSON")
+
+          echo "# Terraform plan" > plans.md
+
+          for lab in $labs; do
+            echo "::group::Plan $lab"
+            terraform -chdir="labs/$lab" init -input=false \
+              -backend-config="bucket=${TF_STATE_BUCKET}" \
+              -backend-config="key=labs/${lab}/terraform.tfstate" \
+              -backend-config="region=${{ secrets.AWS_REGION }}" \
+              -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+              -backend-config="encrypt=true"
+
+            terraform -chdir="labs/$lab" plan -no-color -out=tfplan
+            terraform -chdir="labs/$lab" show -no-color tfplan > "labs/${lab}/plan.txt"
+
+            echo -e "\n## ${lab}\n" >> plans.md
+            echo '```' >> plans.md
+            cat "labs/${lab}/plan.txt" >> plans.md
+            echo '```' >> plans.md
+            echo "::endgroup::"
+          done
+
+      - name: Upload all tfplans
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplans
+          path: labs/**/tfplan
+
+      - name: Comment combined plan to PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: tf-plan
+          path: plans.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
