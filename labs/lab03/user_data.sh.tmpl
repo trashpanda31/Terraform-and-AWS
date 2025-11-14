@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+exec > >(tee -a /var/log/user-data.log) 2>&1
+
+if ! command -v docker >/dev/null 2>&1; then
+  if dnf -y update && dnf -y install docker; then
+    echo "Docker installed via dnf"
+  else
+    echo "dnf failed, falling back to get.docker.com"
+    curl -fsSL https://get.docker.com | sh
+  fi
+fi
+systemctl enable --now docker
+
+IMG="${docker_image}"
+HOST_PORT=${host_port}
+CONT_PORT=${container_port}
+
+docker rm -f app || true
+docker pull "$IMG"
+docker run -d --name app \
+  -p $HOST_PORT:$CONT_PORT \
+  --restart unless-stopped \
+  "$IMG"
+
+for i in $(seq 1 30); do
+  if curl -sSf "http://127.0.0.1:$HOST_PORT" >/dev/null; then
+    echo "App is up on :$HOST_PORT"
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "App did not become ready on: :$HOST_PORT" >&2
+exit 1
