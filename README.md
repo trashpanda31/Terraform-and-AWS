@@ -92,6 +92,7 @@ terraform apply -var="aws_profile=DevOps" -var="prefix=DevOps"
 ```bash
 cd labs/lab03     # or lab01..lab05
 terraform init
+terraform plan
 terraform apply
 ```
 
@@ -123,5 +124,6 @@ terraform destroy
 
 **DynamoDB table with Terraform state locks**  
 <img src="https://i.imgur.com/2RAeTFR.png" alt="DynamoDB table with Terraform state locks" width="1000">
+
 
 
