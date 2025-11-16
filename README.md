@@ -17,7 +17,7 @@ Everything is managed as code, with **remote state in S3 + DynamoDB** and **GitH
 
 - **Labs:** [labs/](labs/) - all labs tab
 - **Terraform CI/CD:** [.github/workflows](.github/workflows) - used CI/CD pipelines
-- **Pull Requests:** [PR tab](../../pulls) - open and closed change requests.
+- **Pull Requests:** [PR tab](../../pulls) - open and closed change requests and Terraform plan results in comments
 - **CI/CD runs:** [Actions tab](../../actions) - `CI_for_Terraform` and `CD_for_Terraform_to_AWS` runs
 - **Docker Hub:** [trashpanda31](https://hub.docker.com/u/trashpanda31) - used images
 
@@ -123,4 +123,5 @@ terraform destroy
 
 **DynamoDB table with Terraform state locks**  
 <img src="https://i.imgur.com/2RAeTFR.png" alt="DynamoDB table with Terraform state locks" width="1000">
+
 
